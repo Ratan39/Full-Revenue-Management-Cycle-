@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Medical Coding Workbench</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <header>
+    <h1>Medical Coding Workbench</h1>
+    <span class="subtitle">Review AI-suggested ICD-10 codes</span>
+  </header>
+
+  <main>
+    <div class="stats-bar">
+      <span>Total notes: <strong>{{ total }}</strong></span>
+      <span id="stat-reviewed">Loading stats...</span>
+    </div>
+
+    <table class="notes-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Note ID</th>
+          <th>Preview</th>
+          <th>Codes</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for note in notes %}
+        <tr class="{{ 'reviewed' if note.reviewed else '' }}">
+          <td>{{ note.index + 1 }}</td>
+          <td>{{ note.note_id }}</td>
+          <td class="preview">{{ note.preview }}...</td>
+          <td>{{ note.total }}</td>
+          <td>
+            {% if note.reviewed %}
+              <span class="badge reviewed">
+                {{ note.accepted }} accepted / {{ note.rejected }} rejected
+              </span>
+            {% else %}
+              <span class="badge pending">Pending</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/review/{{ note.index }}" class="btn-review">
+              {{ 'Re-review' if note.reviewed else 'Review' }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    fetch('/stats')
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('stat-reviewed').innerHTML =
+          `Decisions made: <strong>${d.accepted} accepted</strong> / <strong>${d.rejected} rejected</strong>`;
+      });
+  </script>
+
+</body>
+</html>

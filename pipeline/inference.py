@@ -13,7 +13,7 @@ NOTES_PATH    = "data/pmc_processed/pmc_cleaned.csv"
 VECTOR_STORE  = "embeddings/icd10_vectorstore"
 RESULTS_PATH  = "data/processed/coding_results.csv"
 NUM_CANDIDATES = 10
-TEST_NOTES     = 5       
+TEST_NOTES     = 100       
 NOTE_CHARS     = 1500   
 # ──────────────────────────────────────────────────────────
 

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Note {{ note_index + 1 }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+  <header>
+    <a href="/" class="back">← Back to list</a>
+    <h1>Note {{ note_index + 1 }} of {{ total }}</h1>
+    <div class="nav-buttons">
+      {% if prev_i is not none %}
+        <a href="/review/{{ prev_i }}" class="btn-nav">← Previous</a>
+      {% endif %}
+      {% if next_i is not none %}
+        <a href="/review/{{ next_i }}" class="btn-nav">Next →</a>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="workbench">
+
+    <div class="panel left-panel">
+      <h2>Clinical Note</h2>
+      <p class="note-id">Note ID: {{ note_id }}</p>
+      <div class="note-text">{{ note_text }}</div>
+    </div>
+
+    <div class="panel right-panel">
+      <h2>AI Suggested Codes</h2>
+      <p class="code-count">{{ codes|length }} code(s) suggested</p>
+
+      {% if codes %}
+        {% for code in codes %}
+        <div class="code-card" id="card-{{ code.code }}">
+          <div class="code-header">
+            <span class="code-badge">{{ code.code }}</span>
+            <span class="code-desc">{{ code.description }}</span>
+          </div>
+          <p class="code-reason">{{ code.reason }}</p>
+          <div class="decision-buttons">
+            <button
+              class="btn-accept {{ 'active' if decided.get(code.code) == 'accept' else '' }}"
+              onclick="decide('{{ note_id }}', '{{ code.code }}', '{{ code.description|replace("'", "") }}', '{{ code.reason|replace("'", "") }}', 'accept', this)">
+              ✓ Accept
+            </button>
+            <button
+              class="btn-reject {{ 'active' if decided.get(code.code) == 'reject' else '' }}"
+              onclick="decide('{{ note_id }}', '{{ code.code }}', '{{ code.description|replace("'", "") }}', '{{ code.reason|replace("'", "") }}', 'reject', this)">
+              ✗ Reject
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="no-codes">No codes were suggested for this note.</p>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <script>
+    function decide(noteId, code, description, reason, decision, btn) {
+      fetch('/decide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          note_id:     noteId,
+          code:        code,
+          description: description,
+          reason:      reason,
+          decision:    decision
+        })
+      })
+      .then(r => r.json())
+      .then(d => {
+        const card    = document.getElementById('card-' + code);
+        const buttons = card.querySelectorAll('button');
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        card.classList.remove('accepted', 'rejected');
+        card.classList.add(decision === 'accept' ? 'accepted' : 'rejected');
+      });
+    }
+  </script>
+
+</body>
+</html>
