@@ -9,7 +9,7 @@ df = pd.read_csv("data/icd10_raw/icd10_codes_parsed.csv")
 print(f"Total codes to embed: {len(df)}")
 
 print("\nLoading embedding model (downloads once, cached after)...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = SentenceTransformer("neuml/pubmedbert-base-embeddings")
 print("Model loaded.")
 
 print("\nSetting up ChromaDB...")

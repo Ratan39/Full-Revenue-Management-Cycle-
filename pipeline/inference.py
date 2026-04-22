@@ -12,7 +12,7 @@ MODEL         = "alibayram/medgemma:4b"
 NOTES_PATH    = "data/pmc_processed/pmc_cleaned.csv"
 VECTOR_STORE  = "embeddings/icd10_vectorstore"
 RESULTS_PATH  = "data/processed/coding_results.csv"
-NUM_CANDIDATES = 10
+NUM_CANDIDATES = 15
 TEST_NOTES     = 100       
 NOTE_CHARS     = 1500   
 # ──────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ df = pd.read_csv(NOTES_PATH)
 print(f"Total notes available: {len(df)}")
 
 print("Loading embedding model...")
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embedder = SentenceTransformer("neuml/pubmedbert-base-embeddings")
 
 print("Connecting to vector store...")
 client     = chromadb.PersistentClient(path=VECTOR_STORE)
