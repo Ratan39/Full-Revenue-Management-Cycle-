@@ -1,3 +1,5 @@
+from rank_bm25 import BM25Okapi
+import numpy as np
 import pandas as pd
 import chromadb
 from sentence_transformers import SentenceTransformer
@@ -52,6 +54,24 @@ client     = chromadb.PersistentClient(path=VECTOR_STORE)
 collection = client.get_collection("icd10_codes")
 print(f"Vector store ready — {collection.count()} codes indexed")
 
+print("Building BM25 index from ICD-10 codes...")
+icd10_df = pd.read_csv("data/icd10_raw/icd10_codes_parsed.csv")
+
+bm25_corpus  = []
+bm25_codes   = []
+bm25_descs   = []
+
+for _, row in icd10_df.iterrows():
+    # Tokenise by splitting on spaces and special chars
+    text   = f"{row['code']} {row['long_description']}".lower()
+    tokens = text.replace('-', ' ').replace(',', ' ').split()
+    bm25_corpus.append(tokens)
+    bm25_codes.append(row['code'])
+    bm25_descs.append(row['long_description'])
+
+bm25_index = BM25Okapi(bm25_corpus)
+print(f"BM25 index built — {len(bm25_codes)} codes indexed")
+
 
 def extract_clinical_entities(note_text):
     """Use MedGemma to extract specific clinical entities 
@@ -99,36 +119,107 @@ Clinical note:
     # Fallback — split note into chunks and return as entities
     return [note_text[i:i+200] for i in range(0, min(3000, len(note_text)), 200)]
 
+def bm25_search(query, n=5):
+    """Keyword-based BM25 search over ICD-10 descriptions."""
+    tokens = query.lower().replace('-', ' ').replace(',', ' ').split()
+    scores = bm25_index.get_scores(tokens)
+    top_n  = np.argsort(scores)[::-1][:n]
+
+    results = []
+    for idx in top_n:
+        if scores[idx] > 0:
+            results.append({
+                "code":           bm25_codes[idx],
+                "description":    bm25_descs[idx],
+                "bm25_score":     float(scores[idx]),
+                "matched_entity": query
+            })
+    return results
+
+
+def reciprocal_rank_fusion(semantic_results, bm25_results, k=60):
+    """
+    Combine semantic and BM25 results using reciprocal rank fusion.
+    Codes that appear in both result sets get boosted scores.
+    k=60 is the standard constant that prevents high ranks 
+    from dominating.
+    """
+    scores = {}
+
+    for rank, item in enumerate(semantic_results):
+        code = item["code"]
+        scores[code] = scores.get(code, 0) + 1 / (k + rank + 1)
+
+    for rank, item in enumerate(bm25_results):
+        code = item["code"]
+        scores[code] = scores.get(code, 0) + 1 / (k + rank + 1)
+
+    return scores
+
 
 def retrieve_candidates(note_text, n=5):
-    """Entity-driven retrieval — search for each 
-    clinical entity separately."""
-    
-    entities = extract_clinical_entities(note_text)
+    """
+    Hybrid retrieval — combines semantic search (PubMedBERT)
+    and keyword search (BM25) for each extracted clinical entity.
+    Codes appearing in both searches get boosted via 
+    reciprocal rank fusion.
+    """
+    entities  = extract_clinical_entities(note_text)
     all_codes = {}
-    
+    rrf_scores = {}
+
     for entity in entities[:15]:
         if not entity or len(entity.strip()) < 5:
             continue
-            
-        embedding = embedder.encode([entity]).tolist()
-        results   = collection.query(
+
+        # Semantic search
+        embedding        = embedder.encode([entity]).tolist()
+        sem_results_raw  = collection.query(
             query_embeddings=embedding,
             n_results=n
         )
-        
-        for code, meta in zip(
-            results["ids"][0],
-            results["metadatas"][0]
-        ):
+        semantic_results = [
+            {
+                "code":           meta["code"],
+                "description":    meta["long_description"],
+                "matched_entity": entity
+            }
+            for meta in sem_results_raw["metadatas"][0]
+        ]
+
+        # BM25 keyword search
+        keyword_results = bm25_search(entity, n=n)
+
+        # Reciprocal rank fusion scores
+        entity_scores = reciprocal_rank_fusion(
+            semantic_results, keyword_results
+        )
+
+        # Merge scores across entities
+        for code, score in entity_scores.items():
+            rrf_scores[code] = rrf_scores.get(code, 0) + score
+
+        # Collect all candidate metadata
+        for item in semantic_results + keyword_results:
+            code = item["code"]
             if code not in all_codes:
-                all_codes[code] = {
-                    "code":        meta["code"],
-                    "description": meta["long_description"],
-                    "matched_entity": entity
-                }
-    
-    candidates = list(all_codes.values())
+                all_codes[code] = item
+
+    # Sort all candidates by combined RRF score
+    sorted_codes = sorted(
+        rrf_scores.keys(),
+        key=lambda c: rrf_scores[c],
+        reverse=True
+    )
+
+    # Return top candidates with metadata
+    candidates = []
+    for code in sorted_codes[:30]:
+        if code in all_codes:
+            item = all_codes[code].copy()
+            item["rrf_score"] = round(rrf_scores[code], 4)
+            candidates.append(item)
+
     return candidates
 
 
@@ -296,7 +387,7 @@ for i, row in tqdm(
         "note_preview":       note_text[:150],
         "ground_truth_codes": json.dumps(list(gt_codes)),
         "predicted_codes":    json.dumps(pred_codes),
-        "candidates":         json.dumps([c['code'] for c in candidates]),
+        "candidates":           json.dumps(candidates),
         "num_gt_codes":       len(gt_codes),
         "num_predicted":      len(pred_codes),
         "true_positives":     len(

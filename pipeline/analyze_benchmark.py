@@ -45,19 +45,37 @@ for code, count in counter.most_common(10):
     print(f"  {code}: {count} times")
 
 # Candidate hit rate — was the correct code even in the candidates?
+# Candidate hit rate — check ALL candidates not just top 10
 hit_in_candidates = 0
 total_gt_codes    = 0
 for _, row in df.iterrows():
-    candidates = set(c.replace('.','').upper()
-                     for c in json.loads(row['candidates']))
-    gt         = set(c.replace('.','').upper()
-                     for c in json.loads(row['ground_truth_codes']))
+    # Parse all candidates
+    raw_candidates = json.loads(row['candidates'])
+    
+    # Handle both string lists and dict lists
+    candidate_codes = set()
+    for c in raw_candidates:
+        if isinstance(c, dict):
+            candidate_codes.add(
+                c.get('code','').replace('.','').upper()
+            )
+        else:
+            candidate_codes.add(
+                str(c).replace('.','').upper()
+            )
+
+    gt = set(
+        c.replace('.','').upper()
+        for c in json.loads(row['ground_truth_codes'])
+    )
+
     total_gt_codes    += len(gt)
-    hit_in_candidates += len(candidates & gt)
+    hit_in_candidates += len(candidate_codes & gt)
 
 hit_rate = hit_in_candidates / total_gt_codes if total_gt_codes > 0 else 0
+
 print(f"\nRAG candidate hit rate:")
-print(f"Ground truth codes found in top-10 candidates: "
+print(f"Ground truth codes found in ALL candidates: "
       f"{hit_in_candidates}/{total_gt_codes} ({hit_rate:.1%})")
 print(f"\nThis tells you how often the correct code was even")
 print(f"available for the model to select.")
